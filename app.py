@@ -11,12 +11,12 @@ import json
 from loguru import logger
 from flask import Flask, request
 
-from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction, ActionRegistry
+from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction
 from .classes import TaskSolution
 
 
-DEFAULT_SCREEN_WIDTH = 1920
-DEFAULT_SCREEN_HEIGHT = 1080
+DEFAULT_SCREEN_WIDTH = 1024
+DEFAULT_SCREEN_HEIGHT = 768
 
 SOLVE_TASK_PROMT = """
 """
@@ -34,11 +34,9 @@ def random_task_handler():
     actions = []
 
     try:
-        data = request.json or {}
+        task = request.json or {}
 
-        task = data.get("task", {})
-        if task is None:
-            return "Task not provided", 400
+        logger.info(f"task {task}")
         
         task_id = task.get("id", None)
         if task_id is None:
@@ -48,23 +46,18 @@ def random_task_handler():
         if specifications is None:
             return "Task specifications not provided", 400
 
+        # logger.debug("getting screen resolution")
         screen_width = specifications.get("screen_width", DEFAULT_SCREEN_WIDTH)
         screen_height = specifications.get("screen_height", DEFAULT_SCREEN_HEIGHT)
-
-        # Print final parameters & stats (optional debug)
-        print("[handler] solve_task")
-        print(f"  data:       {data}")
-        print("[handler] .")
-
-        x = random.randint(0, screen_width - 1)  # Random x coordinate
-        y = random.randint(0, screen_height - 1)  # Random y coordinate
-        actions.append(ClickAction(x=x, y=y))
-        ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="random_web_agent")
-        return json.dump(ts)
+        # logger.debug(f"screen {screen_width}x{screen_height}")
     except:
         return "Invalid request format", 400
 
-    return "Hello, I am a random web agent!"
+    x = random.randint(0, screen_width - 1)  # Random x coordinate
+    y = random.randint(0, screen_height - 1)  # Random y coordinate
+    actions.append(ClickAction(x=x, y=y))
+    ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="random_web_agent")
+    return ts.nested_model_dump()
 
 
 @app.route("/openai_solve_task", methods=["POST"])

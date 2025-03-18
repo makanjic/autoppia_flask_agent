@@ -4,6 +4,7 @@ import sys
 import time
 import threading
 import random
+import asyncio
 
 import argparse
 import json
@@ -13,10 +14,12 @@ from flask import Flask, request
 
 from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction
 from .classes import TaskSolution
+from .web_utils import get_html_and_screenshot
+from .openai_service import chat_with_file
 
 
-DEFAULT_SCREEN_WIDTH = 1024
-DEFAULT_SCREEN_HEIGHT = 768
+DEFAULT_SCREEN_WIDTH = 1920
+DEFAULT_SCREEN_HEIGHT = 1080
 
 SOLVE_TASK_PROMT = """
 """
@@ -29,8 +32,9 @@ def hello():
     return "Hello, I am a web agent!"
 
 
-@app.route("/solve_task", methods=["POST"])
+@app.route("/random_solve_task", methods=["POST"])
 def random_task_handler():
+    # return "Hello, I am a random web agent!"
     actions = []
 
     try:
@@ -60,10 +64,48 @@ def random_task_handler():
     return ts.nested_model_dump()
 
 
-@app.route("/openai_solve_task", methods=["POST"])
+@app.route("/solve_task", methods=["POST"])
 def openai_task_handler():
-    return "Hello, I am a web agent!"
+    # return "Hello, I am a openai web agent!"
+    actions = []
 
+    if True:
+        task = request.json or {}
+
+        logger.info(f"task {task}")
+        
+        task_id = task.get("id", None)
+        if task_id is None:
+            return "Task ID not provided", 400
+
+        task_prompt = task.get("prompt", None)
+        if task_prompt is None:
+            return "Task prompt not provided", 400
+
+        page_url = task.get("url", None)
+        if page_url is None:
+            return "Page URL not provided", 400
+
+        is_web_real = task.get("is_web_real", "False")
+
+        page_html = str(task.get("html", ""))
+        if not len(page_html):
+            raw_html, page_html, screenshot, screenshot_desc = asyncio.run(get_html_and_screenshot(page_url))
+
+        prompt_list = [ task_prompt ]
+        prompt_list.append(f"The url for the web page is {page_url}.")
+        
+        if is_web_real == "False":
+            prompt_list.append("But it is not a url for the real web page, so you must only use it for filling fields in the Action objects.")
+
+        actions = chat_with_file("\n".join(prompt_list), raw_html)
+    else:
+        x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
+        y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate
+        actions.append(ClickAction(x=x, y=y))
+
+    ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="random_web_agent")
+    return ts.nested_model_dump()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoppia Web Agent")

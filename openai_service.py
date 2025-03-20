@@ -1,202 +1,158 @@
-from typing import List
+from typing import Any, List, Dict
 import io
-import openai
+import asyncio
 import json
-from .config import *
+import openai
+import tempfile
+
 from loguru import logger
+from .config import *
+from .prompt import *
+from .web_utils import get_html_contents
 
-
-CONVERT_RESPONSE_TO_JSON_PROMPT = """
-You are an AI assistant designed to generate actions required for a Web Agent to perform a given task successfully.
-
-## CRITICAL REQUIREMENTS:
-1. Return ONLY the raw JSON array without any backticks, code blocks, or markdown
-2. Do not include any text before or after the JSON array
-3. The JSON must start with '[' and end with ']'
-"""
-
-
-REQUEST_ACTIONS_PROMPT = """
-## Objective
-You will receive a **Task Prompt** and must generate a json-formatted list of Action objects required to perform it in a web page.
-Then the Web Agent performs one-step actions which are described sequentially in the list of Action objects, by means of playwright.
-The first Action object must represent the one-step action to navigate to the url specified in the task prompt.
-
-
-
-## Composition of a Action object
-Each Action object describes a one-step action to perform the task.
-Each Action object must contain "type" and "selector" fields.
-
-### "type" field in a Action object
-The "type" field of a Action object is a string that contains one of "ClickAction", "DoubleClickAction", "NavigateAction", "TypeAction", "SelectAction", "HoverAction", "WaitAction", "ScrollAction", "SubmitAction", "DragAndDropAction", "ScreenshotAction", "GetDropDownOptions", "SelectDropDownOption" strings.
-
-#### In the case of "type" field contains "ClickAction"
-If the "type" field in a Action object contains "ClickAction", it means that the one-step action is to click a HTML element specified by "selector" field in the Action object.
-In this case, the Action object has optional "x", "y" fields.
-The "x", "y" fields specified the location in which the click action occurs.
-The "x" field is the x coordinated position by pixel from the left of the web page.
-The "y" field is the y coordinated position by pixel from the top of the web page.
-if the "x", "y" fields contains valid numerical values, then the "selector" field may have null value.
-If the "selector" field has a valid value, then the "x", "y" fields can contain null value.
-
-#### In the case of "type" field contains "DoubleClickAction"
-If the "type" field in a Action object contains "DoubleClickAction", it means that the one-step action is to double click a HTML element specified by "selector" field in the Action object.
-
-#### In the case of "type" field contains "NavigateAction"
-If the "type" field in a Action object contains "NavigateAction", it means that the one-step action is to navigate a different web page.
-In this case, the Action object has "url", "go_back", "go_forward" fields.
-And the "selector" field in a Action object has null value.
-The "go_back", "go_forward" fields have boolean values.
-If the "go_back" field has True value, it means the one-step action is to go backward in the browsing history.
-If the "go_forward" field has True value, it means the one-step action is to go forward in the browsing history.
-If neither both fields are True, it means the one-step action is to go to page specified by the "url" field.
-
-#### In the case of "type" field contains "TypeAction"
-If the "type" field in a Action object contains "TypeAction", it means that the one-step action is to type a text into the HTML element specified by "selector" field in the Action object.
-In this case, the Action object has additional "text" field.
-The "text" field has the value to type into the HTML element.
-
-#### In the case of "type" field contains "SelectAction"
-If the "type" field in a Action object contains "SelectAction", it means that the one-step action is to select a option among the options listed in the HTML element specified by "selector" field in the Action object.
-In this case, the Action object has additional "value" field.
-The "value" field contains the option value to be selected.
-
-#### In the case of "type" field contains "HoverAction"
-If the "type" field in a Action object contains "HoverAction", it means that the one-step action is to hover the cursor on the HTML element specified by "selector" field in the Action object.
-
-#### In the case of "type" field contains "WaitAction"
-If the "type" field in a Action object contains "WaitAction", it means that the one-step action is to wait some seconds.
-In this case, the Action object has additional "time_seconds" field.
-The "time_seconds" field contains the time to wait in seconds.
-
-#### In the case of "type" field contains "ScrollAction"
-If the "type" field in a Action object contains "ScrollAction", it means that the one-step action is to scroll the browser window.
-In this case, the Action object has additional "value", "up", "down" fields.
-The "up", "down" fields have boolean values.
-If the "up" field has True value, it means the one-step action is to scroll upward.
-If the "down" field has True value, it means the one-step action is to scroll downward.
-The "value" field has the value which represents how long scroll.
-The "value" field can have a text value, in this case, it means that the one-step action is to scroll to a HTML element which contains the text.
-
-#### In the case of "type" field contains "SubmitAction"
-If the "type" field in a Action object contains "SubmitAction", it means that the one-step action is to press Enter key or click the submit element specified by "selector" field in the Action object in order to submit form data.
-In this case, the "selector" field in a Action object must reference explicitly to the button in the submit form.
-So the "selector" field can reference the submit button by using attributes such as id and name, or by using xpath selector.
-If there is not submit button in the form, the "selector" field can be null value.
-
-#### In the case of "type" field contains "DragAndDropAction"
-If the "type" field in a Action object contains "DragAndDropAction", it means that the one-step action is a drag and drop action.
-In this case, the Action object has additional "source_selector" and "target_selector" fields.
-The "source_selector" and "target_selector" field is strings which are using to refer HTML elements.
-The "source_selector" field refers the source HTML element which is dragged.
-The "target_selector" field refers the destination HTML element which is dropped onto.
-
-#### In the case of "type" field contains "ScreenshotAction"
-If the "type" field in a Action object contains "ScreenshotAction", it means that the one-step action is to make a screenshot for the web browser.
-In this case, the Action object has "file_path" field which has pathname to a file.
-The "file_path" field refers the file which screenshot saved.
-
-#### In the case of "type" field contains "GetDropDownOptions"
-If the "type" field in a Action object contains "GetDropDownOptions", it means that the one-step action is to click a HTML element specified by "selector" field in the Action object, in order to list options in the drop-down menu styled HTML element.
-
-#### In the case of "type" field contains "SelectDropDownOption"
-If the "type" field in a Action object contains "SelectDropDownOption", it means that the one-step action is to select a option in the drop-down menu styled HTML element specified by "selector" field in the Action object.
-In this case, the Action object has "text" field.
-The "text" field contains the value of option to be selected.
-
-
-### "selector" field in a Action object
-The "selector" field of a Action object is a Selector object to specify the element required to perform the one-step action.
-If it is not required to specify the element, it must be null.
-Otherwise, the Selector object has "type" and "attribute", "value" fields.
-The "type" field of a Selector object contains one of "attributeValueSelector", "tagContainsSelector", "xpathSelector" strings.
-
-#### In the case of "type" field in a Selector object contains "attributeValueSelector"
-If the "type" field of a Selector object has "attributeValueSelector" string, the "attribute" field of a Selector object must have one of "id", "class", "name", "href" strings.
-##### In the case of "attribute" field in a Selector object contains "id"
-If the "attribute" field of a Selector object has "id" string, the "value" field of a Selector object contains the id of the HTML element required to perform the one-step action.
-So the "value" field must precede the "#" prefix before the id of the HTML element.
-##### In the case of "attribute" field in a Selector object contains "class"
-If the "attribute" field of a Selector object has "id" string, the "value" field of a Selector object contains the class of the HTML element required to perform the one-step action.
-So the "value" field must precede the "." prefix before the class of the HTML element.
-##### In the case of "attribute" field in a Selector object contains "name"
-If the "attribute" field of a Selector object has "name" string, the "value" field of a Selector object contains the name of the HTML element required to perform the one-step action.
-##### In the case of "attribute" field in a Selector object contains  "href"
-If the "attribute" field of a Selector object has "href" string, the "value" field of a Selector object contains the hyperlink reference in the HTML element required to perform the one-step action.
-So the "value" field contains a url string.
-
-#### In the case of "type" field in a Selector object contains "tagContainsSelector"
-If the "type" field of a Selector object has "tagContainsSelector" string, the "value" field of a Selector object contains tag name of the HTML element required to perform the one-step action.
-
-#### In the case of "type" field in a Selector object contains "xpathSelector"
-If the "type" field of a Selector object has "xpathSelector" string, the "value" field of Selector object contains XPath reference to the HTML element required to perform the one-step action.
-
-## **Task Prompt**
-{task_prompt}
-
-## Brief HTML for the web page
-The brief HTML for the web page is on uploaded file data.
-"""
-
-
-
-def _parse_llm_response(resp_text: str) -> List[str]:
-    """
-    Helper method to parse the LLM response as a list of strings.
-    """
-    try:
-        # Clean up possible Markdown code blocks like ```json ... ```
-        cleaned_text = resp_text
-        if resp_text.strip().startswith("'```") or resp_text.strip().startswith("```"):
-            code_block_pattern = r'```(?:json)?\n([\s\S]*?)\n```'
-            matches = re.search(code_block_pattern, resp_text)
-            if matches:
-                cleaned_text = matches.group(1)
-            else:
-                lines = resp_text.strip().split('\n')
-                if lines[0].startswith("'```") or lines[0].startswith("```"):
-                    cleaned_text = '\n'.join(lines[1:-1] if lines[-1].endswith("```") else lines[1:])
-
-        # Now parse the cleaned JSON
-        data = json.loads(cleaned_text)
-        return data
-
-    except json.JSONDecodeError as je:
-        logger.error(f"JSON decode error: {je}")
-        # Attempt a simpler extraction: look for [ ... ]
+def _parse_json_response(response: str) -> Dict[Any, Any]:
+        """Parses a JSON response from the LLM."""
         try:
-            array_pattern = r'\[\s*".*?"\s*(?:,\s*".*?"\s*)*\]'
-            array_match = re.search(array_pattern, resp_text, re.DOTALL)
-            if array_match:
-                extracted_json = array_match.group(0)
-                data = json.loads(extracted_json)
-                return [str(item) for item in data]
-        except Exception:
-            pass
-        return []
+            return json.loads(response)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON response: {e}")
 
-    except Exception as e:
-        logger.error(f"Unexpected error parsing LLM response: {str(e)}")
-        return []
+# Function to create and write to a temporary file
+def _create_temp_file(content):
+    """Creates a temporary file with the given content and returns its path."""
+    temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8", suffix=".html")
+    temp_file.write(content)
+    temp_file.flush()  # Ensure data is written
+    return temp_file.name
+
+def get_pages_to_upload(task_prompt, portal_url, portal_html):
+    pages_uploaded = []
+
+    logger.debug("getting pages to be uploaded");
+    logger.debug(f"task_prompt: {task_prompt}")
+    logger.debug(f"portal_url: {portal_url}")
+    logger.debug(f"portal_html: {portal_html}")
+
+    if portal_html is None or not len(portal_html.strip()):
+        logger.debug("recrawling the portal page...")
+        portal_html = asyncio.run(get_html_contents(portal_url))
+        logger.debug(f"portal page size  {len(portal_html)}")
+
+    portal_file = _create_temp_file(portal_html)
+    pages_uploaded = {
+        portal_url : {
+            "file": portal_file,
+            "html": portal_html,
+        }
+    }
+
+    while True:
+        sync_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        file_id_list = []
+        mapping_list = []
+        tempfile_list = []
+
+        for k, v in pages_uploaded.items():
+            page_url = k
+            file_name = v["file"]
+            page_contents = v["html"]
+
+            logger.debug(f"page_url {page_url}");
+            logger.debug(f"file_name {file_name}");
+            logger.debug(f"page_size {len(page_contents)}");
+
+            # file_obj = io.BytesIO(page_contents.encode("utf-8"))
+            # response = sync_client.files.create(file=(file_name, file_obj), purpose="assistants")
+            # file_id_list.append(response.id)
+            with open(file_name, "rb") as file:
+                response = sync_client.files.create(file=file, purpose="assistants")
+                file_id_list.append(response.id)
+
+            mapping_list.append(page_url + " : " + file_name)
+
+        urls_uploaded = "\n".join(mapping_list)
+        
+        logger.debug(f"file_id_list {file_id_list}")
+        logger.debug(f"url_uploaded {urls_uploaded}")
+        prompt = USER_FETCH_URL_PROMPT.format(task_prompt=task_prompt,
+                                              urls_uploaded=urls_uploaded)
+        logger.debug(f"prompt {prompt}")
+        payload = {
+            "model": OPENAI_MODEL,
+            "messages": [
+                # { "role": "system", "content": SYSTEM_FETCH_URL_PROMPT },
+                {"role": "system", "content": "You are a helpful AI assistant."},
+                { "role": "user", "content": prompt, "file_ids": file_id_list }
+            ],
+            "temperature": float(OPENAI_TEMPERATURE),
+            "max_tokens": int(OPENAI_MAX_TOKENS),
+        }
+
+        response = sync_client.chat.completions.create(**payload)
+
+        resp_text = response.choices[0].message.content
+        logger.debug(f"url_resp_text {resp_text}")
+        resp_fmt = ' { "required": {resp_text} } '.replace("{resp_text}", resp_text)
+        logger.debug(f"url_resp_fmt {resp_fmt}")
+        resp_json = _parse_json_response(resp_fmt)
+        logger.debug(f"url_resp_json {resp_json}")
+        url_list = resp_json['required']
+
+        del sync_client
+
+        if not isinstance(url_list, list) or not len(url_list):
+            break
+
+        count = 0
+        for page_url in url_list:
+            if page_url in pages_uploaded:
+                continue
+            count += 1
+            page_html = asyncio.run(get_html_contents(page_url))
+            # file_name = "page{index}.html".format(index=len(pages_uploaded))
+            file_name = _create_temp_file(page_html)
+            pages_uploaded[page_url] = {
+                "file" : file_name,
+                "html" : page_html
+            }
+        if count == 0:
+            break
+
+    return pages_uploaded
 
 
-# Function to chat with uploaded file
-def chat_with_file(task_prompt, html_contents):
+
+def inference_actions(task_prompt, pages_uploaded):
     """Creates an in-memory file, uploads it, and sends a chat request including the file."""
+    logger.debug("getting actions required to perform the task");
 
     sync_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    file_id_list = []
+    mapping_list = []
 
-    file_obj = io.BytesIO(html_contents.encode("utf-8"))
-    response = sync_client.files.create(file=("page.html", file_obj), purpose="assistants")
-    file_id = response.id
+    for k, v in pages_uploaded.items():
+        page_url = k
+        file_name = v["file"]
+        page_contents = v["html"]
 
-    prompt = REQUEST_ACTIONS_PROMPT.format(task_prompt=task_prompt)
+        # file_obj = io.BytesIO(page_contents.encode("utf-8"))
+        # response = sync_client.files.create(file=(file_name, file_obj), purpose="assistants")
+        # file_id_list.append(response.id)
+        with open(file_name, "rb") as file:
+            response = sync_client.files.create(file=file, purpose="assistants")
+            file_id_list.append(response.id)
+
+        mapping_list.append(page_url + " : " + file_name)
+
+    urls_uploaded = "\n".join(mapping_list)
+
+    prompt = REQUEST_ACTIONS_PROMPT.format(task_prompt=task_prompt,
+                                           urls_uploaded=urls_uploaded)
     payload = {
         "model": OPENAI_MODEL,
         "messages": [
             { "role": "system", "content": CONVERT_RESPONSE_TO_JSON_PROMPT },
-            { "role": "user", "content": prompt, "file_ids": [file_id]}
+            { "role": "user", "content": prompt, "file_ids": file_id_list }
         ],
         "temperature": float(OPENAI_TEMPERATURE),
         "max_tokens": int(OPENAI_MAX_TOKENS),
@@ -204,8 +160,8 @@ def chat_with_file(task_prompt, html_contents):
 
     response = sync_client.chat.completions.create(**payload)
     resp_text = response.choices[0].message.content
-    resp_formatted = ' { "actions": {resp_text} } '.replace("{resp_text}", resp_text)
-    logger.debug(f"resp_formatted {resp_formatted}")
-    resp_json = _parse_llm_response(resp_formatted)
-    logger.debug(f"response_json {resp_json}")
+    resp_fmt = ' { "actions": {resp_text} } '.replace("{resp_text}", resp_text)
+    logger.debug(f"action_resp_fmt {resp_fmt}")
+    resp_json = _parse_json_response(resp_fmt)
+    logger.debug(f"action_resp_json {resp_json}")
     return resp_json["actions"]

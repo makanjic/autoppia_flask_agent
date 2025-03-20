@@ -4,7 +4,6 @@ import sys
 import time
 import threading
 import random
-import asyncio
 
 import argparse
 import json
@@ -14,15 +13,12 @@ from flask import Flask, request
 
 from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction
 from .classes import TaskSolution
-from .web_utils import get_html_and_screenshot
-from .openai_service import chat_with_file
+from .openai_service import get_pages_to_upload, inference_actions
 
 
 DEFAULT_SCREEN_WIDTH = 1920
 DEFAULT_SCREEN_HEIGHT = 1080
 
-SOLVE_TASK_PROMT = """
-"""
 
 app = Flask(__name__)
 
@@ -87,24 +83,22 @@ def openai_task_handler():
             return "Page URL not provided", 400
 
         is_web_real = task.get("is_web_real", "False")
-
-        page_html = str(task.get("html", ""))
-        if not len(page_html):
-            raw_html, page_html, screenshot, screenshot_desc = asyncio.run(get_html_and_screenshot(page_url))
+        page_html = task.get("html", None)
 
         prompt_list = [ task_prompt ]
-        prompt_list.append(f"The url for the web page is {page_url}.")
-        
+        prompt_list.append(f"The url for the web page is {page_url}")
         if is_web_real == "False":
             prompt_list.append("But it is not a url for the real web page, so you must only use it for filling fields in the Action objects.")
 
-        actions = chat_with_file("\n".join(prompt_list), raw_html)
+        prompt_text = "\n".join(prompt_list)
+        pages_to_upload = get_pages_to_upload(prompt_text, page_url, page_html)
+        actions = inference_actions(prompt_text, pages_to_upload)
     else:
         x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
         y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate
         actions.append(ClickAction(x=x, y=y))
 
-    ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="random_web_agent")
+    ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="openai_web_agent")
     return ts.nested_model_dump()
 
 if __name__ == "__main__":

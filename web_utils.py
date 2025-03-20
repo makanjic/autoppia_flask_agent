@@ -13,15 +13,16 @@ from xmldiff import main
 # from autoppia_iwa.src.llms.infrastructure.ui_parser_service import UIParserService
 
 
-async def get_html_and_screenshot(page_url: str) -> Tuple[str, str, Image.Image, str]:
+# async def get_html_and_screenshot(page_url: str) -> Tuple[str, str, Image.Image, str]:
+async def get_html_contents(page_url: str) -> str:
     """
     Navigates to page_url using Playwright in headless mode, extracts & cleans HTML,
     captures a screenshot, and uses UIParserService to generate a textual summary
     of that screenshot. Returns (cleaned_html, screenshot_description).
     """
-    screenshot = None
-    screenshot_description = ""
-    cleaned_html = ""
+    # screenshot = None
+    # screenshot_description = ""
+    # cleaned_html = ""
     raw_html = ""
 
     try:
@@ -32,15 +33,15 @@ async def get_html_and_screenshot(page_url: str) -> Tuple[str, str, Image.Image,
             page = await context.new_page()
             await page.goto(page_url, timeout=60000)
 
-            # Extract raw HTML and clean it
+            ## Extract raw HTML and clean it
             raw_html = await page.content()
-            cleaned_html = clean_html(raw_html)
+            # cleaned_html = clean_html(raw_html)
 
-            # Capture screenshot in memory
+            ## Capture screenshot in memory
             # screenshot_bytes = await page.screenshot()
             # screenshot = Image.open(BytesIO(screenshot_bytes)).convert("RGB")
 
-            # Generate textual summary of the screenshot
+            ## Generate textual summary of the screenshot
             # ui_parser = UIParserService()
             # screenshot_description = ui_parser.summarize_image(screenshot)
 
@@ -49,9 +50,11 @@ async def get_html_and_screenshot(page_url: str) -> Tuple[str, str, Image.Image,
 
     except Exception as e:
         print(f"Error during HTML extraction or screenshot processing: {e}")
-        return raw_html, cleaned_html, None, screenshot_description
+        # return raw_html, cleaned_html, None, screenshot_description
+        return ""
 
-    return raw_html, cleaned_html, screenshot, screenshot_description
+    # return raw_html, cleaned_html, screenshot, screenshot_description
+    return raw_html
 
 
 def sync_extract_html(page_url: str) -> str:

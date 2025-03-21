@@ -35,7 +35,7 @@ async def get_html_contents(page_url: str) -> str:
 
             ## Extract raw HTML and clean it
             raw_html = await page.content()
-            # cleaned_html = clean_html(raw_html)
+            cleaned_html = clean_html(raw_html)
 
             ## Capture screenshot in memory
             # screenshot_bytes = await page.screenshot()
@@ -54,7 +54,7 @@ async def get_html_contents(page_url: str) -> str:
         return ""
 
     # return raw_html, cleaned_html, screenshot, screenshot_description
-    return raw_html
+    return cleaned_html
 
 
 def sync_extract_html(page_url: str) -> str:

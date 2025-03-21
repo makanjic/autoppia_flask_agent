@@ -13,7 +13,7 @@ from flask import Flask, request
 
 from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction
 from .classes import TaskSolution
-from .openai_service import get_pages_to_upload, inference_actions
+from .openai_service import infer_actions
 
 
 DEFAULT_SCREEN_WIDTH = 1920
@@ -85,14 +85,7 @@ def openai_task_handler():
         is_web_real = task.get("is_web_real", "False")
         page_html = task.get("html", None)
 
-        prompt_list = [ task_prompt ]
-        prompt_list.append(f"The url for the web page is {page_url}")
-        if is_web_real == "False":
-            prompt_list.append("But it is not a url for the real web page, so you must only use it for filling fields in the Action objects.")
-
-        prompt_text = "\n".join(prompt_list)
-        pages_to_upload = get_pages_to_upload(prompt_text, page_url, page_html)
-        actions = inference_actions(prompt_text, pages_to_upload)
+        actions = infer_actions(task_prompt, page_url, page_html)
     else:
         x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
         y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate

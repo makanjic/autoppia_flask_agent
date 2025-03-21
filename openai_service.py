@@ -1,5 +1,6 @@
 from typing import Any, List, Dict
 import io
+import time
 import asyncio
 import json
 import openai
@@ -10,158 +11,211 @@ from .config import *
 from .prompt import *
 from .web_utils import get_html_contents
 
-def _parse_json_response(response: str) -> Dict[Any, Any]:
-        """Parses a JSON response from the LLM."""
+def _parse_response_json_list(response: str) -> List:
+        """Parses a JSON list response from the LLM."""
+
+        resp_fmt = ' { "data": {response} } '.replace("{response}", response)
+        logger.debug(f"resp_fmt {resp_fmt}")
+
         try:
-            return json.loads(response)
+            resp_json = json.loads(resp_fmt)
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse JSON response: {e}")
 
-# Function to create and write to a temporary file
-def _create_temp_file(content):
-    """Creates a temporary file with the given content and returns its path."""
-    temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8", suffix=".html")
-    temp_file.write(content)
-    temp_file.flush()  # Ensure data is written
-    return temp_file.name
+        logger.debug(f"resp_json {resp_json}")
+        return resp_json["data"]
 
-def get_pages_to_upload(task_prompt, portal_url, portal_html):
-    pages_uploaded = []
 
-    logger.debug("getting pages to be uploaded");
+
+
+def infer_actions(task_prompt, portal_url, portal_html):
+    logger.debug("getting inference for actions");
     logger.debug(f"task_prompt: {task_prompt}")
     logger.debug(f"portal_url: {portal_url}")
     logger.debug(f"portal_html: {portal_html}")
 
     if portal_html is None or not len(portal_html.strip()):
-        logger.debug("recrawling the portal page...")
+        logger.debug("refetching the portal page...")
         portal_html = asyncio.run(get_html_contents(portal_url))
         logger.debug(f"portal page size  {len(portal_html)}")
+    if portal_html is None or not len(portal_html.strip()):
+        logger.debug("failed to fetch the portal page or empty")
+        return []
 
-    portal_file = _create_temp_file(portal_html)
+    # Set up OpenAI client
+    logger.debug("creating client...")
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    # Create a vector store caled "Web Automation Testbed Store"
+    vector_store = client.vector_stores.create(name="Web Automation Testbed Store")
+    logger.debug(f"vector_store {vector_store}")
+
+    logger.debug("creating assistant...")
+    assistant = client.beta.assistants.create(
+        name="The Web Automation Action Generator",
+        instructions=SYSTEM_PROMPT,
+        model=OPENAI_MODEL,
+        tools=[ {"type": "file_search"} ],  # Enables file reading
+        tool_resources={
+            "file_search": {
+                "vector_store_ids": [ vector_store.id ]
+            }
+        }
+    )
+    assistant_id = assistant.id
+    logger.debug("creating thread...")
+    response = client.beta.threads.create(
+        tool_resources={
+            "file_search": {
+                "vector_store_ids": [ vector_store.id ]
+            }
+        }
+    )
+    thread_id = response.id
+
+    logger.debug("getting upload pages")
+    file_obj = io.BytesIO(portal_html.encode("utf-8"))
+    response = client.files.create(file=("page0.html", file_obj), purpose="assistants")
+    portal_file_id = response.id
     pages_uploaded = {
         portal_url : {
-            "file": portal_file,
+            "file": "page0.html",
             "html": portal_html,
+            "id": portal_file_id
         }
     }
 
-    while True:
-        sync_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    # Send a message and get a response (while keeping context)
+    def _chat_with_assistant(user_message, file_id_list):
+        """Sends a message to an assistant and gets a response."""
+
+        attachments = []
+        if len(file_id_list) > 0:
+            batch = client.vector_stores.file_batches.create_and_poll(
+                vector_store_id=vector_store.id,
+                file_ids=file_id_list
+            )
+            for file_id in file_id_list:
+                attachments.append({
+                    "file_id": file_id, "tools": [{"type": "file_search"}]
+                })
+
+        # Add the user's message to the thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message,
+            attachments=attachments
+        )
+
+        # Run the assistant to generate a response
+        run = client.beta.threads.runs.create(thread_id=thread_id, assistant_id=assistant_id)
+
+        # Wait for the assistant to process the request
+        while True:
+            run_status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            if run_status.status == "completed":
+                break
+            elif run_status.status == "expired":
+                return None
+            elif run_status.status == "failed":
+                return None
+            elif run_status.status == "incomplete":
+                return None
+            elif run_status.status == "cancelled":
+                return None
+            else:
+                time.sleep(1)  # Wait before checking again
+
+        # Get AI's response
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        return messages.data[0].content[0].text.value  # Extract text response
+
+    user_prompt = FIRST_MISSION_PROMPT.format(
+                    task_prompt=task_prompt,
+                    portal_url=portal_url,
+                    file_uploaded="page0.html")
+    user_prompt += "\n" + OUTPUT_REQ_PROMPT
+    
+    logger.debug(f"first prompt: {user_prompt}")
+    response = _chat_with_assistant(user_prompt, [ portal_file_id ])
+    logger.debug(f"first response: {response}")
+    # return []
+    url_list = _parse_response_json_list(response)
+    url_list = [ url for url in url_list if url not in pages_uploaded ]
+    logger.debug(f"first response url: {url_list}")
+
+    total_file_id_list = []
+    while len(url_list) > 0:
         file_id_list = []
         mapping_list = []
-        tempfile_list = []
-
-        for k, v in pages_uploaded.items():
-            page_url = k
-            file_name = v["file"]
-            page_contents = v["html"]
-
+        for page_url in url_list:
+            page_html = asyncio.run(get_html_contents(page_url))
+            file_name = "page{index}.html".format(index=len(pages_uploaded))
             logger.debug(f"page_url {page_url}");
             logger.debug(f"file_name {file_name}");
-            logger.debug(f"page_size {len(page_contents)}");
+            logger.debug(f"page_size {len(page_html)}");
 
-            # file_obj = io.BytesIO(page_contents.encode("utf-8"))
-            # response = sync_client.files.create(file=(file_name, file_obj), purpose="assistants")
-            # file_id_list.append(response.id)
-            with open(file_name, "rb") as file:
-                response = sync_client.files.create(file=file, purpose="assistants")
-                file_id_list.append(response.id)
-
+            file_obj = io.BytesIO(page_html.encode("utf-8"))
+            response = client.files.create(file=(file_name, file_obj), purpose="assistants")
+            file_id = response.id
+            file_id_list.append(file_id)
+            total_file_id_list.append(file_id)
+            pages_uploaded[page_url] = {
+                "file" : file_name,
+                "html" : page_html,
+                "id" : file_id
+            }
             mapping_list.append(page_url + " : " + file_name)
 
         urls_uploaded = "\n".join(mapping_list)
-        
         logger.debug(f"file_id_list {file_id_list}")
         logger.debug(f"url_uploaded {urls_uploaded}")
-        prompt = USER_FETCH_URL_PROMPT.format(task_prompt=task_prompt,
-                                              urls_uploaded=urls_uploaded)
-        logger.debug(f"prompt {prompt}")
-        payload = {
-            "model": OPENAI_MODEL,
-            "messages": [
-                # { "role": "system", "content": SYSTEM_FETCH_URL_PROMPT },
-                {"role": "system", "content": "You are a helpful AI assistant."},
-                { "role": "user", "content": prompt, "file_ids": file_id_list }
-            ],
-            "temperature": float(OPENAI_TEMPERATURE),
-            "max_tokens": int(OPENAI_MAX_TOKENS),
-        }
+        user_prompt = NEXT_MISSION_PROMPT.format(urls_uploaded=urls_uploaded)
+        user_prompt += "\n" + OUTPUT_REQ_PROMPT
+        logger.debug(f"again prompt: {user_prompt}")
+        response = _chat_with_assistant(user_prompt, file_id_list)
+        logger.debug(f"again response: {response}")
+        url_list = _parse_response_json_list(response)
+        url_list = [ url for url in url_list if url not in pages_uploaded ]
+        logger.debug(f"again response url: {url_list}")
 
-        response = sync_client.chat.completions.create(**payload)
+    user_prompt = LAST_MISSION_PROMPT + "\n" + OUTPUT_REQ_PROMPT
+    logger.debug(f"action prompt: {user_prompt}")
+    response = _chat_with_assistant(user_prompt, [])
+    logger.debug(f"action response: {response}")
+    action_list = _parse_response_json_list(response)
+    logger.debug(f"action list: {action_list}")
 
-        resp_text = response.choices[0].message.content
-        logger.debug(f"url_resp_text {resp_text}")
-        resp_fmt = ' { "required": {resp_text} } '.replace("{resp_text}", resp_text)
-        logger.debug(f"url_resp_fmt {resp_fmt}")
-        resp_json = _parse_json_response(resp_fmt)
-        logger.debug(f"url_resp_json {resp_json}")
-        url_list = resp_json['required']
+    # List all files in vector store
+    files = client.vector_stores.files.list(vector_store.id)
+    # Delete each file from vector store
+    for file in files.data:
+        logger.debug(f"Deleting file {file.id} from vector_store %{vector_store.id}")
+        client.vector_stores.files.delete(vector_store_id = vector_store.id, file_id = file.id)
+    # Delete vector store
+    logger.debug(f"Deleting vector_store %{vector_store.id}")
+    client.vector_stores.delete(vector_store.id)
+    # Delete files uploaded
+    for file_id in total_file_id_list:
+        logger.debug(f"Deleting file: {file.id}")
+        client.files.delete(file_id)
+    logger.debug(f"Deleting assistant {assistant.id}")
+    client.beta.assistants.delete(assistant.id)
 
-        del sync_client
+    #for store in client.vector_stores.list():
+    #    try:
+    #        client.vector_stores.delete(vector_store_id=store.id)
+    #    except:
+    #        pass
+    #for file in client.files.list():
+    #    try:
+    #        client.files.delete(file.id)
+    #    except:
+    #        pass
+    #for assistant in client.beta.assistants.list():
+    #    try:
+    #        client.beta.assistants.delete(assistant.id)
+    #    except:
+    #        pass
 
-        if not isinstance(url_list, list) or not len(url_list):
-            break
-
-        count = 0
-        for page_url in url_list:
-            if page_url in pages_uploaded:
-                continue
-            count += 1
-            page_html = asyncio.run(get_html_contents(page_url))
-            # file_name = "page{index}.html".format(index=len(pages_uploaded))
-            file_name = _create_temp_file(page_html)
-            pages_uploaded[page_url] = {
-                "file" : file_name,
-                "html" : page_html
-            }
-        if count == 0:
-            break
-
-    return pages_uploaded
-
-
-
-def inference_actions(task_prompt, pages_uploaded):
-    """Creates an in-memory file, uploads it, and sends a chat request including the file."""
-    logger.debug("getting actions required to perform the task");
-
-    sync_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    file_id_list = []
-    mapping_list = []
-
-    for k, v in pages_uploaded.items():
-        page_url = k
-        file_name = v["file"]
-        page_contents = v["html"]
-
-        # file_obj = io.BytesIO(page_contents.encode("utf-8"))
-        # response = sync_client.files.create(file=(file_name, file_obj), purpose="assistants")
-        # file_id_list.append(response.id)
-        with open(file_name, "rb") as file:
-            response = sync_client.files.create(file=file, purpose="assistants")
-            file_id_list.append(response.id)
-
-        mapping_list.append(page_url + " : " + file_name)
-
-    urls_uploaded = "\n".join(mapping_list)
-
-    prompt = REQUEST_ACTIONS_PROMPT.format(task_prompt=task_prompt,
-                                           urls_uploaded=urls_uploaded)
-    payload = {
-        "model": OPENAI_MODEL,
-        "messages": [
-            { "role": "system", "content": CONVERT_RESPONSE_TO_JSON_PROMPT },
-            { "role": "user", "content": prompt, "file_ids": file_id_list }
-        ],
-        "temperature": float(OPENAI_TEMPERATURE),
-        "max_tokens": int(OPENAI_MAX_TOKENS),
-    }
-
-    response = sync_client.chat.completions.create(**payload)
-    resp_text = response.choices[0].message.content
-    resp_fmt = ' { "actions": {resp_text} } '.replace("{resp_text}", resp_text)
-    logger.debug(f"action_resp_fmt {resp_fmt}")
-    resp_json = _parse_json_response(resp_fmt)
-    logger.debug(f"action_resp_json {resp_json}")
-    return resp_json["actions"]
+    return action_list

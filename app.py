@@ -4,16 +4,19 @@ import sys
 import time
 import threading
 import random
-
 import argparse
 import json
+import asyncio
+# import trio
 
+from distutils.util import strtobool
 from loguru import logger
 from flask import Flask, request
 
-from .actions.actions import ClickAction, TypeAction, ScrollAction, WaitAction, ScreenshotAction
+from .actions.actions import ClickAction
 from .classes import TaskSolution
-from .openai_service import infer_actions
+from .openai_service import openai_infer_actions
+from .llm_agent import llm_get_actions
 
 
 DEFAULT_SCREEN_WIDTH = 1920
@@ -60,7 +63,7 @@ def random_task_handler():
     return ts.nested_model_dump()
 
 
-@app.route("/solve_task", methods=["POST"])
+@app.route("/openai_solve_task", methods=["POST"])
 def openai_task_handler():
     # return "Hello, I am a openai web agent!"
     actions = []
@@ -82,10 +85,10 @@ def openai_task_handler():
         if page_url is None:
             return "Page URL not provided", 400
 
-        is_web_real = task.get("is_web_real", "False")
+        is_web_real = bool(task.get("is_web_real", False))
         page_html = task.get("html", None)
 
-        actions = infer_actions(task_prompt, page_url, page_html)
+        actions = openai_infer_actions(task_prompt, page_url, page_html)
     else:
         x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
         y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate
@@ -93,6 +96,52 @@ def openai_task_handler():
 
     ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="openai_web_agent")
     return ts.nested_model_dump()
+
+@app.route("/solve_task", methods=["POST"])
+async def llm_task_handler():
+    # return "Hello, I am a openai web agent!"
+    actions = []
+    actions_cache = {}
+
+    if True:
+        task = request.json or {}
+
+        logger.info(f"task {task}")
+        
+        task_id = task.get("id", None)
+        if task_id is None:
+            return "Task ID not provided", 400
+        task_prompt = task.get("prompt", None)
+        if task_prompt is None:
+            return "Task prompt not provided", 400
+        page_url = task.get("url", None)
+        if page_url is None:
+            return "Page URL not provided", 400
+
+        
+
+#        if task_prompt in actions_cache.keys():
+#            actions = actions_cache[task_prompt]
+#        else:
+        if True:
+            actions = await llm_get_actions(task)
+            # actions = trio.run(llm_get_actions, task)
+            # asyncio.set_event_loop(asyncio.ProactorEventLoop())
+            # loop = asyncio.get_event_loop()
+            # actions = loop.run_until_complete(llm_get_actions(task))
+            # loop.close()
+            if actions and len(actions) > 0:
+                actions_cache[task_prompt] = actions
+    else:
+        x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
+        y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate
+        actions.append(ClickAction(x=x, y=y))
+
+    # return actions
+    ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="llm_web_agent")
+    return ts.nested_model_dump()
+    
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoppia Web Agent")

@@ -12,7 +12,7 @@ load_dotenv()
 # ============================
 # LLM CONFIGURATION
 # ============================
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")  # Can be "local" or "openai"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")  # Can be "gemini" or "openai"
 LLM_THRESHOLD = 100
 LLM_CONTEXT_WINDOW = int(os.getenv("LLM_CONTEXT_WINDOW", 10000))
 
@@ -25,9 +25,18 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4-32k-0613")
 OPENAI_MAX_TOKENS = int(os.getenv("LLM_CONTEXT_WINDOW", 2000))
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", 0.8))
 
+# Genmini Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+
+# PlayWright Configuration
+BROWSER_HEADLESS = bool(strtobool(os.getenv("BROWSER_HEADLESS", "false")))
+
 # Validate critical environment variables
 if LLM_PROVIDER == "openai" and not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER is set to 'openai'.")
+if LLM_PROVIDER == "gemini" and not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER is set to 'gemini'.")    
 
 # ============================
 # Agent Configurations

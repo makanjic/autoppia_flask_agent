@@ -123,9 +123,9 @@ async def llm_task_handler():
             return "Page URL not provided", 400
 
         if task_prompt in actions_cache.keys():
-            log.debug("using cached actions...")
+            logger.debug("using cached actions...")
             actions = actions_cache[task_prompt]
-            log.debug(f"cached: {actions}")
+            logger.debug(f"cached: {actions}")
         else:
 #        if True:
             # actions = await llm_get_actions(task)

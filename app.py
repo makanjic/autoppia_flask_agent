@@ -123,7 +123,9 @@ async def llm_task_handler():
             return "Page URL not provided", 400
 
         if task_prompt in actions_cache.keys():
+            log.debug("using cached actions...")
             actions = actions_cache[task_prompt]
+            log.debug(f"cached: {actions}")
         else:
 #        if True:
             # actions = await llm_get_actions(task)
@@ -152,7 +154,8 @@ async def llm_task_handler():
             os.unlink(in_path)
             os.unlink(out_path)
 
-            if actions and len(actions) > 0:
+            if actions and len(actions) > 2:
+                logger.debug("caching actions...")
                 actions_cache[task_prompt] = actions
     else:
         x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate

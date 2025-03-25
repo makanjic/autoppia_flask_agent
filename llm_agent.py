@@ -13,6 +13,8 @@ from browser_use import Agent, Browser, BrowserConfig, Controller
 import httpx
 import gc
 
+import pymongo
+
 from config import LLM_PROVIDER, BROWSER_HEADLESS
 if LLM_PROVIDER == "gemini":
     from llm_gemini import llm
@@ -212,6 +214,15 @@ async def llm_get_actions(task: Dict) -> List:
     logger.debug("getting inference for actions");
     logger.debug(f"task: {task}")
 
+    myclient = pymongo.MongoClient("mongodb://localhost:27017/")
+    mydb = myclient["autoppia_web_agent"]
+    mycol = mydb["task_solutions"]
+    x = mycol.find_one({"prompt" : task['prompt'], "url" : task['url']})
+    if x:
+        logger.debug("found in db")
+        logger.debug(f"actions {x['actions']}")
+        return x['actions']
+
     browser = Browser(config=browser_config) 
 
     controller = Controller(exclude_actions=[
@@ -293,6 +304,9 @@ The relevant data is as following.
     if model_actions:
         actions = _convert_actions(model_actions)
         logger.debug(f"actions {actions}")
+        if history.is_done() and len(actions) > 2:
+            logger.debug("insert into db...")
+            mycol.insert_one({"prompt": task['prompt'], "url": task['url'], "actions": actions})
 
     return actions
 

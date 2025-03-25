@@ -1,7 +1,11 @@
-from typing import Any, List, Dict
+#!/usr/bin/env python3
+
+import sys
 import os
 import asyncio
+import json
 
+from typing import Any, List, Dict
 from distutils.util import strtobool
 from loguru import logger
 from browser_use import Agent, Browser, BrowserConfig, Controller
@@ -9,22 +13,23 @@ from browser_use import Agent, Browser, BrowserConfig, Controller
 import httpx
 import gc
 
-from .config import LLM_PROVIDER, BROWSER_HEADLESS
+from config import LLM_PROVIDER, BROWSER_HEADLESS
 if LLM_PROVIDER == "gemini":
-    from .llm_gemini import llm
+    from llm_gemini import llm
 elif LLM_PROVIDER == "openai":
-    from .llm_openai import llm
+    from llm_openai import llm
 else:
     llm = None
 
-from .actions.base import \
+from actions.base import \
         SelectorType, Selector
-from .actions.actions import \
+from actions.actions import \
         ClickAction, DoubleClickAction, NavigateAction, \
         TypeAction, SelectAction, HoverAction, WaitAction, \
         ScrollAction, SubmitAction, DragAndDropAction, \
         ScreenshotAction, SendKeysIWAAction, GetDropDownOptions, \
         SelectDropDownOption, UndefinedAction, IdleAction
+
 
 
 # Basic configuration
@@ -181,10 +186,12 @@ async def _agent_close(agent: Agent):
     """Close all resources"""
     try:
         # First close browser resources
-        if agent.browser_context and not agent.injected_browser_context:
+        # if agent.browser_context and not agent.injected_browser_context:
+        if True:
             logger.debug("Closing browser_context...")
             await agent.browser_context.close()
-        if agent.browser and not agent.injected_browser:
+        # if agent.browser and not agent.injected_browser:
+        if True:
             logger.debug("Closing browser...")
             await agent.browser.close()
         
@@ -267,12 +274,18 @@ The relevant data is as following.
         task=task_prompt,
         message_context=message_context,
         llm=llm,
-        max_failures=2
+        max_failures=1
     )
-    history = await agent.run()
-
+    
     model_actions = []
-    if history.is_done():
+    try:
+        history = await agent.run()
+    finally:
+        # await browser.close()
+        await _agent_close(agent)
+
+    # if history.is_done():
+    if True:
         model_actions = history.model_actions()
         logger.debug(f"model_actions {model_actions}")
 
@@ -281,30 +294,31 @@ The relevant data is as following.
         actions = _convert_actions(model_actions)
         logger.debug(f"actions {actions}")
 
-    await _agent_close(agent)
-    # await browser.close()
     return actions
 
 
 if __name__ == "__main__":
     async def main():
+        if len(sys.argv) > 1:
+            f_in = open(sys.argv[1], "r")
+            s_input = f_in.read()
+            f_in.close()
+        else:
+            s_input = sys.stdin.read()
+
+        if len(sys.argv) > 2:
+            f_out = open(sys.argv[2], "w")
+        else:
+            f_out = sys.stdout
+
         browser = Browser(config=browser_config)
 
-        agent = Agent(
-            browser=browser,
-            task="Log in using the username:user172 and password:password123",
-            message_context="""
-                The url of home page is http://localhost:8000.
-                This web page is not a real web page, so failure is not a concern.
-                This web site is on local.
-            """,
-            llm=llm,
-            max_failures=1
-        )
-        history = await agent.run()
-        if history.is_done():
-            print(history.model_actions())
-
-        await browser.close()
+        logger.debug(f"input: {s_input}")
+        task = json.loads(s_input)
+        actions = await llm_get_actions(task)
+        
+        actions_dump = [action.model_dump() for action in actions]
+        logger.debug(f"dump: {actions_dump}")
+        f_out.write(json.dumps(actions_dump))
 
     asyncio.run(main())

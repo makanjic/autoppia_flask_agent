@@ -1,6 +1,7 @@
 # Description: Main entry point for the web agent service.
 
 import sys
+import os
 import time
 import threading
 import random
@@ -8,6 +9,8 @@ import argparse
 import json
 import asyncio
 # import trio
+import tempfile
+import subprocess
 
 from distutils.util import strtobool
 from loguru import logger
@@ -16,7 +19,7 @@ from flask import Flask, request
 from .actions.actions import ClickAction
 from .classes import TaskSolution
 from .openai_service import openai_infer_actions
-from .llm_agent import llm_get_actions
+# from .llm_agent import llm_get_actions
 
 
 DEFAULT_SCREEN_WIDTH = 1920
@@ -97,11 +100,12 @@ def openai_task_handler():
     ts = TaskSolution(task_id=task_id, actions=actions, web_agent_id="openai_web_agent")
     return ts.nested_model_dump()
 
+actions_cache = {}
+
 @app.route("/solve_task", methods=["POST"])
 async def llm_task_handler():
     # return "Hello, I am a openai web agent!"
     actions = []
-    actions_cache = {}
 
     if True:
         task = request.json or {}
@@ -118,18 +122,36 @@ async def llm_task_handler():
         if page_url is None:
             return "Page URL not provided", 400
 
-        
-
-#        if task_prompt in actions_cache.keys():
-#            actions = actions_cache[task_prompt]
-#        else:
-        if True:
-            actions = await llm_get_actions(task)
+        if task_prompt in actions_cache.keys():
+            actions = actions_cache[task_prompt]
+        else:
+#        if True:
+            # actions = await llm_get_actions(task)
             # actions = trio.run(llm_get_actions, task)
             # asyncio.set_event_loop(asyncio.ProactorEventLoop())
             # loop = asyncio.get_event_loop()
             # actions = loop.run_until_complete(llm_get_actions(task))
             # loop.close()
+
+            actions = []
+            tf_in, in_path = tempfile.mkstemp()
+            tf_out, out_path = tempfile.mkstemp()
+            with open(in_path, "w") as f:
+                f.write(json.dumps(task))
+
+            agent_pathname = "llm_agent.py"
+            ret = subprocess.run(["python3", agent_pathname, in_path, out_path])
+            if ret.returncode == 0:
+                with open(out_path, "r") as f:
+                    s_output = f.read()
+                    logger.debug(f"agent output {s_output}")
+                    actions = json.loads(s_output)
+
+            os.close(tf_in)
+            os.close(tf_out)
+            os.unlink(in_path)
+            os.unlink(out_path)
+
             if actions and len(actions) > 0:
                 actions_cache[task_prompt] = actions
     else:

@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from .config import OPENAI_MODEL, OPENAI_API_KEY, OPENAI_MAX_TOKENS, OPENAI_TEMPERATURE
+from config import OPENAI_MODEL, OPENAI_API_KEY, OPENAI_MAX_TOKENS, OPENAI_TEMPERATURE
 
 # Initialize the model
 llm = ChatOpenAI(model=OPENAI_MODEL,

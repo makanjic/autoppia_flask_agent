@@ -15,7 +15,7 @@ import gc
 
 import pymongo
 
-from config import LLM_PROVIDER, BROWSER_HEADLESS
+from config import LLM_PROVIDER, BROWSER_HEADLESS, MONGO_DB_URL, MONGO_DB_NAME
 if LLM_PROVIDER == "gemini":
     from llm_gemini import llm
 elif LLM_PROVIDER == "openai":

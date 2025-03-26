@@ -42,3 +42,9 @@ if LLM_PROVIDER == "gemini" and not GEMINI_API_KEY:
 # Agent Configurations
 # ============================
 AGENT_NAME = os.getenv("AGENT_NAME")
+
+# ============================
+# MongoDB Configurations
+# ============================
+MONGO_DB_URL = os.getenv("MONGO_DB_URL", "mongodb://localhost:27017/")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "autoppia_web_agent")

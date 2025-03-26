@@ -214,8 +214,8 @@ async def llm_get_actions(task: Dict) -> List:
     logger.debug("getting inference for actions");
     logger.debug(f"task: {task}")
 
-    myclient = pymongo.MongoClient("mongodb://localhost:27017/")
-    mydb = myclient["autoppia_web_agent"]
+    myclient = pymongo.MongoClient(MONGO_DB_URL)
+    mydb = myclient[MONGO_DB_NAME]
     mycol = mydb["task_solutions"]
     x = mycol.find_one({"prompt" : task['prompt'], "url" : task['url']})
     if x:

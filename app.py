@@ -122,12 +122,12 @@ async def llm_task_handler():
         if page_url is None:
             return "Page URL not provided", 400
 
-        if task_prompt in actions_cache.keys():
-            logger.debug("using cached actions...")
-            actions = actions_cache[task_prompt]
-            logger.debug(f"cached: {actions}")
-        else:
-#        if True:
+#        if task_prompt in actions_cache.keys():
+#            logger.debug("using cached actions...")
+#            actions = actions_cache[task_prompt]
+#            logger.debug(f"cached: {actions}")
+#        else:
+        if True:
             # actions = await llm_get_actions(task)
             # actions = trio.run(llm_get_actions, task)
             # asyncio.set_event_loop(asyncio.ProactorEventLoop())
@@ -154,9 +154,9 @@ async def llm_task_handler():
             os.unlink(in_path)
             os.unlink(out_path)
 
-            if actions and len(actions) > 2:
-                logger.debug("caching actions...")
-                actions_cache[task_prompt] = actions
+#            if actions and len(actions) > 2:
+#                logger.debug("caching actions...")
+#                actions_cache[task_prompt] = actions
     else:
         x = random.randint(0, DEFAULT_SCREEN_WIDTH - 1)  # Random x coordinate
         y = random.randint(0, DEFAULT_SCREEN_HEIGHT - 1)  # Random y coordinate

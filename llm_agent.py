@@ -217,7 +217,16 @@ async def llm_get_actions(task: Dict) -> List:
     myclient = pymongo.MongoClient(MONGO_DB_URL)
     mydb = myclient[MONGO_DB_NAME]
     mycol = mydb["task_solutions"]
-    x = mycol.find_one({"prompt" : task['prompt'], "url" : task['url']})
+
+    task_prompt = task.get("prompt", None)
+    page_url = task.get("url", None)
+    task_spec = task.get("specifications", None)
+    relevant_data = task.get("relevant_data", None)
+
+    x = mycol.find_one({"prompt" : task_prompt,
+                        "url" : page_url,
+                        "specifications" : task_spec,
+                        "relevant_data" : relevant_data})
     if x:
         logger.debug("found in db")
         logger.debug(f"actions {x['actions']}")
@@ -232,9 +241,7 @@ async def llm_get_actions(task: Dict) -> List:
                             'extract_content'
                             ])
 
-    task_prompt = task.get("prompt", None)
     
-    page_url = task.get("url", None)
     message_context = f"""
 The url of home page is {page_url}.
 All actions must start from this url.
@@ -256,22 +263,20 @@ This home page is not a real web page, so failure is not a concern.
 #This home page is on the local site.
 #"""
 
-    specifications = task.get("specifications", None)
-    if specifications:
-        viewport_width = specifications.get("viewport_width", None)
-        viewport_height = specifications.get("viewport_height", None)
+    if task_spec:
+        viewport_width = task_spec.get("viewport_width", None)
+        viewport_height = task_spec.get("viewport_height", None)
         if viewport_width and viewport_height:
             message_context += f"""
 The size of viewport is {viewport_width}x{viewport_height}.
 """
-        screen_width = specifications.get("screen_width", None)
-        screen_height = specifications.get("screen_height", None)
+        screen_width = task_spec.get("screen_width", None)
+        screen_height = task_spec.get("screen_height", None)
         if screen_width and screen_height:
             message_context += f"""
 The size of screen is {screen_width}x{screen_height}.
 """
 
-    relevant_data = task.get("relevant_data", None)
     if relevant_data:
         message_context += f"""
 The relevant data is as following.
@@ -302,11 +307,17 @@ The relevant data is as following.
 
     actions = []
     if model_actions:
-        actions = _convert_actions(model_actions)
+        action_objects = _convert_actions(model_actions)
+        logger.debug(f"action_objects {action_objects}")
+        actions = [action.model_dump() for action in action_objects]
         logger.debug(f"actions {actions}")
         if history.is_done() and len(actions) > 2:
             logger.debug("insert into db...")
-            mycol.insert_one({"prompt": task['prompt'], "url": task['url'], "actions": actions})
+            mycol.insert_one({"prompt": task_prompt,
+                              "url": page_url,
+                              "specifications": task_spec,
+                              "relevant_data" : relevant_data,
+                              "actions": actions})
 
     return actions
 
@@ -330,9 +341,6 @@ if __name__ == "__main__":
         logger.debug(f"input: {s_input}")
         task = json.loads(s_input)
         actions = await llm_get_actions(task)
-        
-        actions_dump = [action.model_dump() for action in actions]
-        logger.debug(f"dump: {actions_dump}")
-        f_out.write(json.dumps(actions_dump))
+        f_out.write(json.dumps(actions))
 
     asyncio.run(main())

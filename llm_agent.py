@@ -20,6 +20,8 @@ if LLM_PROVIDER == "gemini":
     from llm_gemini import llm
 elif LLM_PROVIDER == "openai":
     from llm_openai import llm
+elif LLM_PROVIDER == "perplexity":
+    from llm_perplexity import llm
 else:
     llm = None
 

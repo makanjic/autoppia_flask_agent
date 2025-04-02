@@ -257,6 +257,7 @@ This home page is on a real web site.
     else:
         message_context += """
 This home page is not a real web page, so failure is not a concern.
+DO NOT retry the actions if it fail.
 """
 
 #    scope = task.get("scope", "local")

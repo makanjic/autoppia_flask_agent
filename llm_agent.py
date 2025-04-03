@@ -225,14 +225,21 @@ async def llm_get_actions(task: Dict) -> List:
     task_spec = task.get("specifications", None)
     relevant_data = task.get("relevant_data", None)
 
-    x = mycol.find_one({"prompt" : task_prompt,
-                        "url" : page_url,
-                        "specifications" : task_spec,
-                        "relevant_data" : relevant_data})
-    if x:
-        logger.debug("found in db")
-        logger.debug(f"actions {x['actions']}")
-        return x['actions']
+    db_accessible = True
+    try:
+        x = mycol.find_one({"prompt" : task_prompt,
+                            "url" : page_url,
+                            "specifications" : task_spec,
+                            "relevant_data" : relevant_data})
+        if x:
+            logger.debug("found in db")
+            logger.debug(f"actions {x['actions']}")
+            return x['actions']
+        else:
+            logger.debug("no found in db")
+    except:
+        db_accessible = False
+        logger.debug("failed to access db")
 
     browser = Browser(config=browser_config) 
 
@@ -257,7 +264,7 @@ This home page is on a real web site.
     else:
         message_context += """
 This home page is not a real web page, so failure is not a concern.
-DO NOT retry the actions if it fail.
+DO NOT retry the actions if they fail.
 """
 
 #    scope = task.get("scope", "local")
@@ -314,13 +321,16 @@ The relevant data is as following.
         logger.debug(f"action_objects {action_objects}")
         actions = [action.model_dump() for action in action_objects]
         logger.debug(f"actions {actions}")
-        if history.is_done() and len(actions) > 2:
-            logger.debug("insert into db...")
-            mycol.insert_one({"prompt": task_prompt,
-                              "url": page_url,
-                              "specifications": task_spec,
-                              "relevant_data" : relevant_data,
-                              "actions": actions})
+        if db_accessible and history.is_done() and len(actions) > 2:
+            logger.debug("trying to insert into db...")
+            try:
+                mycol.insert_one({"prompt": task_prompt,
+                                "url": page_url,
+                                "specifications": task_spec,
+                                "relevant_data" : relevant_data,
+                                "actions": actions})
+            except:
+                logger.debug("failed to insert db.")
 
     return actions
 

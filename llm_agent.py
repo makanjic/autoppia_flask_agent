@@ -102,6 +102,7 @@ def _convert_actions(model_actions: List) -> List:
             case 'go_to_url':
                 if 'url' in action and action['url']:
                     url=action['url']
+                    url=url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
                 else:
                     url = None
                 result_action = NavigateAction(url=url, go_back=False, go_forward=False)
@@ -222,6 +223,7 @@ async def llm_get_actions(task: Dict) -> List:
 
     task_prompt = task.get("prompt", None)
     page_url = task.get("url", None)
+    page_url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
     task_spec = task.get("specifications", None)
     relevant_data = task.get("relevant_data", None)
 

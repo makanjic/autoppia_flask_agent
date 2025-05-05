@@ -9,6 +9,14 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
+# DEMO WEB PORT
+# ============================
+# This is the port where the demo web server will run.
+# You can change this to any available port on your machine.
+# The default is 8000.
+# ============================
+DEMO_WEBS_STARTING_PORT=int(os.getenv("DEMO_WEBS_STARTING_PORT", 8000))
+
 # ============================
 # LLM CONFIGURATION
 # ============================

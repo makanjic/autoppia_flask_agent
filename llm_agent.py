@@ -31,8 +31,8 @@ from actions.actions import \
         ClickAction, DoubleClickAction, NavigateAction, \
         TypeAction, SelectAction, HoverAction, WaitAction, \
         ScrollAction, SubmitAction, DragAndDropAction, \
-        ScreenshotAction, SendKeysIWAAction, GetDropDownOptions, \
-        SelectDropDownOption, UndefinedAction, IdleAction
+        ScreenshotAction, SendKeysIWAAction, GetDropDownOptionsAction, \
+        SelectDropDownOptionAction, UndefinedAction, IdleAction
 
 
 
@@ -155,13 +155,13 @@ def _convert_actions(model_actions: List) -> List:
                     text = None
                 result_action = ScrollAction(up=False, down=False, value=text)
             case 'get_dropdown_options':
-                result_action = GetDropDownOptions(selector=selector)
+                result_action = GetDropDownOptionsAction(selector=selector)
             case 'select_dropdown_option':
                 if 'text' in action and action['text']:
                     text = action['text']
                 else:
                     text = None 
-                result_action = SelectDropDownOption(selector=selector, text=text)
+                result_action = SelectDropDownOptionAction(selector=selector, text=text)
 
         if result_action:
             result_action_list.append(result_action)

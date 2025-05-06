@@ -15,6 +15,7 @@ import gc
 
 import pymongo
 
+from config import DEMO_WEBS_STARTING_PORT
 from config import LLM_PROVIDER, BROWSER_HEADLESS, MONGO_DB_URL, MONGO_DB_NAME
 if LLM_PROVIDER == "gemini":
     from llm_gemini import llm
@@ -102,7 +103,7 @@ def _convert_actions(model_actions: List) -> List:
             case 'go_to_url':
                 if 'url' in action and action['url']:
                     url=action['url']
-                    url=url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
+                    url=url.replace(":" + str(DEMO_WEBS_STARTING_PORT), ":8000")
                 else:
                     url = None
                 result_action = NavigateAction(url=url, go_back=False, go_forward=False)
@@ -223,7 +224,6 @@ async def llm_get_actions(task: Dict) -> List:
 
     task_prompt = task.get("prompt", None)
     page_url = task.get("url", None)
-    page_url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
     task_spec = task.get("specifications", None)
     relevant_data = task.get("relevant_data", None)
 
@@ -242,6 +242,8 @@ async def llm_get_actions(task: Dict) -> List:
     except:
         db_accessible = False
         logger.debug("failed to access db")
+
+    page_url = page_url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
 
     browser = Browser(config=browser_config) 
 

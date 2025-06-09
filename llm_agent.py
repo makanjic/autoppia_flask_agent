@@ -273,6 +273,7 @@ async def llm_get_actions(task: Dict) -> List:
                         "relevant_data" : relevant_data})
         if x:
             logger.debug(f"found in db - count is {len(x)}")
+            logger.debug(f"x is {x}")
             maxlen = 0
             used_actions = None
             for doc in x:

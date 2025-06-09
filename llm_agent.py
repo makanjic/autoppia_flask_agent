@@ -339,7 +339,6 @@ Try a action only once. - DO NOT retry a action more since it fails.
         controller=controller,
         browser_context=browser_context,
         injected_agent_state=agent_state,
-        initial_actions=initial_actions,
         task=task_prompt,
         message_context=message_context,
         llm=llm,

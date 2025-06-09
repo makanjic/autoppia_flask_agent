@@ -299,9 +299,9 @@ async def llm_get_actions(task: Dict) -> List:
                 logger.debug("ignore the search result from db")
         else:
             logger.debug("no found in db")
-    except:
+    except Exception as e:
         db_accessible = False
-        logger.debug("failed to access db")
+        logger.debug(f"failed to access db: {e}")
 
     browser = Browser(config=BrowserConfig(
             headless=BROWSER_HEADLESS,
@@ -386,8 +386,8 @@ Try a action only once. - DO NOT retry a action more since it fails.
                     },
                     upsert=True
                 )
-            except:
-                logger.debug("failed to insert db.")
+            except Exception as e:
+                logger.debug(f"failed to insert db: {e}")
 
     return actions
 

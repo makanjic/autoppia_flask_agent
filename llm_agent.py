@@ -8,7 +8,8 @@ import json
 from typing import Any, List, Dict
 from distutils.util import strtobool
 from loguru import logger
-from browser_use import Agent, Browser, BrowserConfig, Controller
+from browser_use import Agent, Browser, BrowserConfig, Controller, \
+                    BrowserContext, BrowserContextConfig, AgentState
 
 import httpx
 import gc
@@ -35,14 +36,8 @@ from actions.actions import \
         ScreenshotAction, SendKeysIWAAction, GetDropDownOptionsAction, \
         SelectDropDownOptionAction, UndefinedAction, IdleAction
 
-
-
-# Basic configuration
-browser_config = BrowserConfig(
-    headless=BROWSER_HEADLESS,
-    disable_security=True
-)
-
+from urllib.parse import urljoin
+import aiohttp
 
 
 def _convert_selector(element):
@@ -103,7 +98,6 @@ def _convert_actions(model_actions: List) -> List:
             case 'go_to_url':
                 if 'url' in action and action['url']:
                     url=action['url']
-                    url=url.replace(":" + str(DEMO_WEBS_STARTING_PORT), ":8000")
                 else:
                     url = None
                 result_action = NavigateAction(url=url, go_back=False, go_forward=False)
@@ -214,6 +208,47 @@ async def _agent_close(agent: Agent):
         logger.error(f"Error during cleanup: {e}")
 
 
+async def reset_site_database(site_url: str) -> bool:
+    """
+    Resets the entire database (requires admin/superuser permissions).
+    """
+    
+    logger.info("Resetting Project Environment & Database.")
+    endpoint = urljoin(site_url, "management_admin/reset_db/")
+    try:
+        session = aiohttp.ClientSession()
+        async with session.post(endpoint, timeout=30) as response:
+            response.raise_for_status()
+
+            try:
+                response_json = await response.json()
+                status = response_json.get("status")
+                message = response_json.get("message", "")
+
+                if status == "success":
+                    logger.info(f"Database reset initiated: {message}. Lasted: {time.time() - start_time}")
+                    return True
+                else:
+                    logger.warning(f"Database reset failed: {message} Lasted: {time.time() - start_time}")
+                    return False
+
+            except Exception:
+                # If we can't parse JSON, check status code
+                if response.status in (200, 202):
+                    logger.info("Database reset initiated successfully.")
+                    return True
+                else:
+                    logger.warning(f"Database reset completed with unexpected status: {response.status}")
+                    return False
+
+    except Exception as e:
+        logger.error(f"Failed to reset database: {e}")
+        return False
+    finally:
+        if session:
+            await session.close()
+
+
 async def llm_get_actions(task: Dict) -> List:
     logger.debug("getting inference for actions");
     logger.debug(f"task: {task}")
@@ -243,9 +278,24 @@ async def llm_get_actions(task: Dict) -> List:
         db_accessible = False
         logger.debug("failed to access db")
 
-    page_url = page_url.replace(":8000", ":" + str(DEMO_WEBS_STARTING_PORT))
+    browser = Browser(config=BrowserConfig(
+            headless=BROWSER_HEADLESS,
+            disable_security=True
+        )
+    )
 
-    browser = Browser(config=browser_config) 
+    browser_context = BrowserContext(
+        browser=browser,
+        config=BrowserContextConfig(
+            highlight_elements=False
+        )
+    )
+
+    agent_state = AgentState()
+    if page_url:
+        initial_actions = [{'goto_url': {'url': page_url}}]
+    else:
+        initial_actions = []
 
     controller = Controller(exclude_actions=[
                             'search_google',
@@ -254,59 +304,18 @@ async def llm_get_actions(task: Dict) -> List:
                             'extract_content'
                             ])
 
-    
-    message_context = f"""
-The url of home page is {page_url}.
-All actions must start from this url.
-"""
-
-    is_web_real = bool(task.get("is_web_real", False))
-    if is_web_real:
-        message_context += """
-This home page is on a real web site.
-"""
-    else:
-        message_context += """
-This home page is not a real web page, so failure is not a concern.
-DO NOT retry the actions if they fail.
-"""
-
-#    scope = task.get("scope", "local")
-#    if scope == "local":
-#        message_context += """
-#This home page is on the local site.
-#"""
-
-    if task_spec:
-        viewport_width = task_spec.get("viewport_width", None)
-        viewport_height = task_spec.get("viewport_height", None)
-        if viewport_width and viewport_height:
-            message_context += f"""
-The size of viewport is {viewport_width}x{viewport_height}.
-"""
-        screen_width = task_spec.get("screen_width", None)
-        screen_height = task_spec.get("screen_height", None)
-        if screen_width and screen_height:
-            message_context += f"""
-The size of screen is {screen_width}x{screen_height}.
-"""
-
-    if relevant_data:
-        message_context += f"""
-The relevant data is as following.
-{relevant_data}
-"""
-
     logger.debug(f"task is {task_prompt}")
-    logger.debug(f"message_context is {message_context}")
     agent = Agent(
         browser=browser,
+        browser_context=browser_context,
+        controller=controller,
+        injected_agent_state=agent_state,
+        initial_actions=initial_actions,
         task=task_prompt,
-        message_context=message_context,
         llm=llm,
         max_failures=1
     )
-    
+
     model_actions = []
     try:
         history = await agent.run()
@@ -353,10 +362,17 @@ if __name__ == "__main__":
         else:
             f_out = sys.stdout
 
-        browser = Browser(config=browser_config)
-
         logger.debug(f"input: {s_input}")
         task = json.loads(s_input)
+
+        site_url = task.get("url", None)
+        if site_url is not None:
+            reset_success = await reset_site_database(site_url)
+            if reset_success:
+                logger.debug("Database reset successfully.")
+            else:
+                logger.debug("Database reset failed or not required.")
+
         actions = await llm_get_actions(task)
         f_out.write(json.dumps(actions))
 

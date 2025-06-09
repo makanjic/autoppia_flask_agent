@@ -280,8 +280,8 @@ async def llm_get_actions(task: Dict) -> List:
             for doc in x:
                 try:
                     actions = doc.get('actions', [])
-                    done = bool(doc.get('done', False))               
-                    if actions and done and maxlen < len(actions):
+                    is_done = bool(doc.get('is_done', False))               
+                    if actions and is_done and maxlen < len(actions):
                         maxlen = max(maxlen, len(actions))
                         used_actions = actions
                 except Exception as e:
@@ -374,7 +374,7 @@ Try a action only once. - DO NOT retry a action more since it fails.
                         "specifications": task_spec,
                         "relevant_data" : relevant_data,
                         "actions": actions,
-                        "done": history.done(),
+                        "is_done": history.is_done(),
                     },
                     {
                         "prompt": task_prompt,
@@ -382,7 +382,7 @@ Try a action only once. - DO NOT retry a action more since it fails.
                         "specifications": task_spec,
                         "relevant_data" : relevant_data,
                         "actions": actions,
-                        "done": history.done(),
+                        "is_done": history.is_done(),
                     },
                     upsert=True
                 )

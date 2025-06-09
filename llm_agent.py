@@ -263,14 +263,35 @@ async def llm_get_actions(task: Dict) -> List:
 
     db_accessible = True
     try:
-        x = mycol.find_one({"prompt" : task_prompt,
-                            "url" : page_url,
-                            "specifications" : task_spec,
-                            "relevant_data" : relevant_data})
+        x = mycol.find({"prompt" : task_prompt,
+                        "url" : page_url,
+                        "specifications" : task_spec,
+                        "relevant_data" : relevant_data})
         if x:
             logger.debug("found in db")
-            logger.debug(f"actions {x['actions']}")
-            return x['actions']
+            x = list(x)
+            maxlen = 0
+            used_actions = None
+            for doc in x:
+                try:
+                    actions = doc.get('actions', [])
+                    done = bool(doc.get('done', False))               
+                    if actions and done and maxlen < len(actions):
+                        maxlen = max(maxlen, len(actions))
+                        used_actions = actions
+                except Exception as e:
+                    logger.debug(f"Error processing document {doc}: {e}")
+                    pass
+            if used_actions is not None:
+                logger.debug(f"used_actions {used_actions}")
+                actions = used_actions
+            else:
+                actions = None
+            if len(actions) > 2:
+                logger.debug(f"using the search result from db")
+                return actions
+            else:
+                logger.debug("ignore the search result from db")
         else:
             logger.debug("no found in db")
     except:
@@ -325,14 +346,28 @@ async def llm_get_actions(task: Dict) -> List:
         logger.debug(f"action_objects {action_objects}")
         actions = [action.model_dump() for action in action_objects]
         logger.debug(f"actions {actions}")
-        if db_accessible and history.is_done() and len(actions) > 2:
+        if db_accessible:
             logger.debug("trying to insert into db...")
             try:
-                mycol.insert_one({"prompt": task_prompt,
-                                "url": page_url,
-                                "specifications": task_spec,
-                                "relevant_data" : relevant_data,
-                                "actions": actions})
+                mycol.update_one(
+                    {
+                        "prompt": task_prompt,
+                        "url": page_url,
+                        "specifications": task_spec,
+                        "relevant_data" : relevant_data,
+                        "actions": actions,
+                        "done": history.done(),
+                    },
+                    {
+                        "prompt": task_prompt,
+                        "url": page_url,
+                        "specifications": task_spec,
+                        "relevant_data" : relevant_data,
+                        "actions": actions,
+                        "done": history.done(),
+                    },
+                    upsert=True
+                )
             except:
                 logger.debug("failed to insert db.")
 

@@ -2,6 +2,7 @@
 
 import sys
 import os
+import time
 import asyncio
 import json
 
@@ -271,7 +272,7 @@ async def llm_get_actions(task: Dict) -> List:
                         "url" : page_url,
                         "specifications" : task_spec,
                         "relevant_data" : relevant_data})
-        x = x.to_list()
+        x = list(x)
         if len(x) > 0:
             logger.debug(f"found in db - count is {len(x)}")
             logger.debug(f"x is {x}")
@@ -318,7 +319,7 @@ async def llm_get_actions(task: Dict) -> List:
     agent_state = AgentState()
     controller = Controller(exclude_actions=[
                             'search_google',
-                            'save_pdf'
+                            'save_pdf',
                             'open_tab',
                             'extract_content'
                             ])
@@ -377,12 +378,14 @@ Try a action only once. - DO NOT retry a action more since it fails.
                         "is_done": history.is_done(),
                     },
                     {
-                        "prompt": task_prompt,
-                        "url": page_url,
-                        "specifications": task_spec,
-                        "relevant_data" : relevant_data,
-                        "actions": actions,
-                        "is_done": history.is_done(),
+                        "$set": {
+                            "prompt": task_prompt,
+                            "url": page_url,
+                            "specifications": task_spec,
+                            "relevant_data" : relevant_data,
+                            "actions": actions,
+                            "is_done": history.is_done(),
+                        }
                     },
                     upsert=True
                 )

@@ -315,17 +315,23 @@ async def llm_get_actions(task: Dict) -> List:
     )
 
     agent_state = AgentState()
-    if page_url:
-        initial_actions = [{'go_to_url': {'url': page_url}}]
-    else:
-        initial_actions = []
-
     controller = Controller(exclude_actions=[
                             'search_google',
                             'save_pdf'
                             'open_tab',
                             'extract_content'
                             ])
+
+    message_context = f"""
+The url of site is {page_url}.
+The first action must be navigating to this url.
+"""
+
+    is_web_real = bool(task.get("is_web_real", False))
+    if not is_web_real:
+        message_context += """
+Try a action only once. - DO NOT retry a action more since it fails.
+"""
 
     logger.debug(f"task is {task_prompt}")
     agent = Agent(
@@ -335,6 +341,7 @@ async def llm_get_actions(task: Dict) -> List:
         injected_agent_state=agent_state,
         initial_actions=initial_actions,
         task=task_prompt,
+        message_context=message_context,
         llm=llm,
         max_failures=1
     )

@@ -316,7 +316,7 @@ async def llm_get_actions(task: Dict) -> List:
 
     agent_state = AgentState()
     if page_url:
-        initial_actions = [{'goto_url': {'url': page_url}}]
+        initial_actions = [{'go_to_url': {'url': page_url}}]
     else:
         initial_actions = []
 

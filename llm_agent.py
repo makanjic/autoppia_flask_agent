@@ -271,7 +271,8 @@ async def llm_get_actions(task: Dict) -> List:
                         "url" : page_url,
                         "specifications" : task_spec,
                         "relevant_data" : relevant_data})
-        if x:
+        x = x.to_list()
+        if len(x) > 0:
             logger.debug(f"found in db - count is {len(x)}")
             logger.debug(f"x is {x}")
             maxlen = 0

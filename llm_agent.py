@@ -8,8 +8,7 @@ import json
 from typing import Any, List, Dict
 from distutils.util import strtobool
 from loguru import logger
-from browser_use import Agent, Browser, BrowserConfig, Controller, \
-                    BrowserContext, BrowserContextConfig, AgentState
+from browser_use import Agent, Browser, BrowserConfig, Controller, AgentState
 
 import httpx
 import gc
@@ -284,13 +283,6 @@ async def llm_get_actions(task: Dict) -> List:
         )
     )
 
-    browser_context = BrowserContext(
-        browser=browser,
-        config=BrowserContextConfig(
-            highlight_elements=False
-        )
-    )
-
     agent_state = AgentState()
     if page_url:
         initial_actions = [{'goto_url': {'url': page_url}}]
@@ -307,7 +299,6 @@ async def llm_get_actions(task: Dict) -> List:
     logger.debug(f"task is {task_prompt}")
     agent = Agent(
         browser=browser,
-        browser_context=browser_context,
         controller=controller,
         injected_agent_state=agent_state,
         initial_actions=initial_actions,

@@ -244,10 +244,10 @@ class SendKeysIWAAction(BaseAction):
         await page.keyboard.press(self.keys)
 
 
-class GetDropDownOptions(BaseActionWithSelector):
-    type: Literal["GetDropDownOptions"] = "GetDropDownOptions"
+class GetDropDownOptionsAction(BaseActionWithSelector):
+    type: Literal["GetDropDownOptionsAction"] = "GetDropDownOptionsAction"
 
-    @log_action("GetDropDownOptions")
+    @log_action("GetDropDownOptionsAction")
     async def execute(self, page: Optional[Page], backend_service, web_agent_id: str):
         xpath = self.validate_selector()
         all_options = []
@@ -286,17 +286,17 @@ class GetDropDownOptions(BaseActionWithSelector):
             frame_index += 1
 
         if all_options:
-            msg = "\n".join(all_options) + "\nUse the exact string in SelectDropDownOption"
+            msg = "\n".join(all_options) + "\nUse the exact string in SelectDropDownOptionAction"
             action_logger.info(msg)
         else:
             action_logger.info("No options found in any frame for dropdown")
 
 
-class SelectDropDownOption(BaseActionWithSelector):
-    type: Literal["SelectDropDownOption"] = "SelectDropDownOption"
+class SelectDropDownOptionAction(BaseActionWithSelector):
+    type: Literal["SelectDropDownOptionAction"] = "SelectDropDownOptionAction"
     text: str
 
-    @log_action("SelectDropDownOption")
+    @log_action("SelectDropDownOptionAction")
     async def execute(self, page: Optional[Page], backend_service, web_agent_id: str):
         xpath = self.validate_selector()
         frame_index = 0
@@ -376,8 +376,8 @@ AllActionsUnion = Annotated[
         DragAndDropAction,
         ScreenshotAction,
         SendKeysIWAAction,
-        GetDropDownOptions,
-        SelectDropDownOption,
+        GetDropDownOptionsAction,
+        SelectDropDownOptionAction,
         UndefinedAction,
         IdleAction,
     ],
@@ -405,8 +405,8 @@ ACTION_CLASS_MAP_LOWER = {
     "idle": IdleAction,
     "undefined": UndefinedAction,
     "sendkeysiwa": SendKeysIWAAction,
-    "getdropdownoptions": GetDropDownOptions,
-    "selectdropdownoption": SelectDropDownOption,
+    "GetDropDownOptionsAction": GetDropDownOptionsAction,
+    "SelectDropDownOptionAction": SelectDropDownOptionAction,
 }
 
 ACTION_CLASS_MAP_CAPS = {
@@ -425,8 +425,8 @@ ACTION_CLASS_MAP_CAPS = {
     "IdleAction": IdleAction,
     "UndefinedAction": UndefinedAction,
     "SendKeysIWAAction": SendKeysIWAAction,
-    "GetDropDownOptions": GetDropDownOptions,
-    "SelectDropDownOption": SelectDropDownOption,
+    "GetDropDownOptionsAction": GetDropDownOptionsAction,
+    "SelectDropDownOptionAction": SelectDropDownOptionAction,
 }
 
 ACTION_CLASS_MAP = {**ACTION_CLASS_MAP_CAPS, **ACTION_CLASS_MAP_LOWER}

@@ -28,7 +28,7 @@ def _parse_response_json_list(response: str) -> List:
 
 
 
-def infer_actions(task_prompt, portal_url, portal_html):
+def openai_infer_actions(task_prompt, portal_url, portal_html):
     logger.debug("getting inference for actions");
     logger.debug(f"task_prompt: {task_prompt}")
     logger.debug(f"portal_url: {portal_url}")
